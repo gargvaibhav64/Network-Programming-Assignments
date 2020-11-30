@@ -5,12 +5,15 @@
 #include <sys/socket.h>
 #include <netdb.h>
 #include <errno.h>
-
+#include <netinet/in.h>
+#include <arpa/inet.h>
 #define MAX_CLIENTS 100
+
+#define max(a,b) (((a)>(b))?(a):(b))
 
 enum opcode {
      RRQ=1,
-     DATA,
+     DATA=3,
      ACK,
      ERROR
 };
@@ -48,14 +51,13 @@ typedef struct {
 } tftp_message;
 
 typedef struct {
-     int sockfd;
-     int block_num;
-     in_port_t port;
-     struct sockaddr_in client_sock;
-     int clilen;
-     int filefd;
-     int block_num;
-     int prev_data_size;
+    int sockfd;
+    short block_num;
+    in_port_t port;
+    struct sockaddr_in client_sock;
+    int clilen;
+    FILE * filefd;
+    int prev_data_size;
 } clients;
 
 tftp_message t;
@@ -85,6 +87,7 @@ ssize_t tftp_send_data(int s, uint16_t block_number, uint8_t *data,
 }
 
 int tftp_recv(int s, tftp_message *m, struct sockaddr_in *sock, socklen_t *slen) {
+
     int c;
 
     if ((c = recvfrom(s, m, sizeof(*m), 0, (struct sockaddr *) sock, slen)) < 0
@@ -97,13 +100,14 @@ int tftp_recv(int s, tftp_message *m, struct sockaddr_in *sock, socklen_t *slen)
 int main(int argc, char *argv[]) {
 
     if(argc < 2){
-        printf("Usage: $ ./tftp 8069");
+        printf("Usage: $ ./tftp 8069 \n");
         exit(1);
     }
 
     int sockfd;
 
     struct sockaddr_in serv;
+    socklen_t serv_len = sizeof(serv);
 
     if ((sockfd = socket(AF_INET, SOCK_DGRAM, 0)) == -1) {
         perror("server: socket() error");
@@ -128,10 +132,16 @@ int main(int argc, char *argv[]) {
         exit(1);
     }
 
-    printf("tftp server: listening on %d\n", ntohs(serv.sin_port));
+    if(getsockname(sockfd, (struct sockaddr *) &serv, (socklen_t *)&serv_len) < 0){
+        perror("server: getsockname()");
+        close(sockfd);
+        exit(1);                    
+    }
+
+    printf("tftp server: listening on %s.%d\n", inet_ntoa(serv.sin_addr), ntohs(serv.sin_port));
 
     FD_SET(sockfd, &rset);
-    int maxfdp1 = sockfd;
+    int maxfdp1 = sockfd + 1;
 
     while(1){
         struct sockaddr_in client_sock;
@@ -140,9 +150,20 @@ int main(int argc, char *argv[]) {
         int msglen;
         tftp_message msg;
 
-        select(maxfdp1, &rset, NULL, NULL, 0);
+        struct timeval tval = {3, 0};
+
+        // printf("Here\n");
+
+        if(select(maxfdp1, &rset, NULL, NULL, &tval) < 0){
+            perror("select : ");
+        }
+        // select(maxfdp1, &rset, NULL, NULL, NULL);
+
+        printf("Here\n");
 
         if (FD_ISSET(sockfd, &rset)){
+
+            printf("Here1\n");
 
             if ((msglen = tftp_recv(sockfd, &msg, &client_sock, &slen)) < 0) {
                 continue;
@@ -165,7 +186,25 @@ int main(int argc, char *argv[]) {
 
                 if ((clsockfd = socket(AF_INET, SOCK_DGRAM, 0)) == -1) {
                     perror("server: socket()");
-                    exit(1);
+                    continue;
+                }
+
+                struct sockaddr_in serv_cl;
+
+                serv_cl.sin_family = AF_INET;
+                serv_cl.sin_addr.s_addr = htonl(INADDR_ANY);
+                serv_cl.sin_port = 0;
+
+                if (bind(clsockfd, (struct sockaddr *) &serv_cl, sizeof(serv_cl)) == -1) {
+                    perror("server: bind()");
+                    close(clsockfd);
+                    continue;
+                }
+
+                if(getsockname(clsockfd, (struct sockaddr *) &serv_cl, (socklen_t *)&serv_len) < 0){
+                    perror("server: getsockname()");
+                    close(clsockfd);
+                    continue;                    
                 }
 
                 char *filename, *end;
@@ -194,7 +233,7 @@ int main(int argc, char *argv[]) {
                 }
 
                 opcode = ntohs(msg.opcode);
-                int fd = fopen(filename, "r"); // Handling only Read requests
+                FILE * fd = fopen(filename, "r"); // Handling only Read requests
 
                 if (fd == NULL) {
                     perror("server: fopen()"); // Error in opening file
@@ -217,22 +256,29 @@ int main(int argc, char *argv[]) {
                 client[cl_num].sockfd = clsockfd;
                 client[cl_num].filefd = fd;
                 client[cl_num].prev_data_size = -1;
-                client[cl_num].port = 0;
+                client[cl_num].port = serv_cl.sin_port;
 
                 cl_num++;
+
+                printf("Got a valid request\n");
+
             }
 
             else {
-                printf("%s.%u: invalid request received: opcode \n", 
+                printf("%s.%u: invalid request received: %d opcode \n", 
                         inet_ntoa(client_sock.sin_addr), ntohs(client_sock.sin_port),
                         opcode);
                 // tftp_send_error(s, 0, "invalid opcode", &client_sock, slen);
             }
         } 
-        else {
-            for(int i = 0 ; i < cl_num ; i++){
-                if((client[i].filefd != -1 && FD_ISSET(client[i].sockfd, &rset)) 
-                        || client[i].prev_data_size == -1) {
+        // else 
+        // {
+            for(int i = 0 ; i < cl_num ; i++)
+            {
+                // printf("Works\n");
+                if((client[i].filefd != NULL && FD_ISSET(client[i].sockfd, &rset)) 
+                        || client[i].prev_data_size == -1) 
+                {
 
                     if(client[i].prev_data_size != -1){
 
@@ -256,7 +302,7 @@ int main(int argc, char *argv[]) {
                             // Close connection
                         }
 
-                        if (ntohs(m.opcode) != ACK)  {
+                        if (ntohs(msg.opcode) != ACK)  {
                             printf("%s.%u: invalid message during transfer received\n",
                                 inet_ntoa(client[i].client_sock.sin_addr), ntohs(client[i].client_sock.sin_port));
                             // tftp_send_error(s, 0, "invalid message during transfer", client_sock, slen);
@@ -280,9 +326,16 @@ int main(int argc, char *argv[]) {
 
                     dlen = fread(data, 1, sizeof(data), client[i].filefd);
 
-                    if(dlen < 512){
-                        
+                    if(dlen == 0){
+                        // Connection completed in normal cases
+
+                        client[i].filefd = NULL;
+                        continue;
+
                     }
+
+                    client[i].block_num++;
+                    client[i].prev_data_size = dlen;
                     
                     int c;
 
@@ -297,7 +350,7 @@ int main(int argc, char *argv[]) {
                     }
                 }
             }
-        }
+        // } // end else 
 
     }
 
