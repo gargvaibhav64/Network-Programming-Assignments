@@ -9,6 +9,8 @@
 #include <unistd.h> 
 #include <signal.h>
 #include <sys/wait.h>
+#include <time.h>
+
 #define MAX 100
 
 struct buffer {

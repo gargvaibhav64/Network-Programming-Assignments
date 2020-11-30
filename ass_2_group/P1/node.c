@@ -15,10 +15,10 @@ int min(int a, int b)
 int getCount(int n)
 {
 	double cnt = 0;
-	while (n % 2 != 0)
+	while ((n%2) != 1)
 	{
 		cnt++;
-		n = n / 2;
+		n= n/2;
 	}
 	return (int)pow(2.0, cnt);
 }
@@ -166,8 +166,7 @@ int newNode(int port1, int port2, pid_t parent, int nodeNum)
 		{
 			if (buf->merged)
 			{
-
-				printf("Node-%d recieved merged for dest= %d, Src= %d start= %d end= %d\n", nodeNum, buf->destNode, buf->srcNode, buf->start, buf->end);
+				printf("Node-%d recieved merged for dest= %d, Src= %d start= %d end= %d len= %d\n", nodeNum, buf->destNode, buf->srcNode, buf->start, buf->end, buf->len);
                 // for(int i=0; i<N; i++){
                 //     printf("%d", buf->arr[i]);
                 // }
@@ -191,6 +190,8 @@ int newNode(int port1, int port2, pid_t parent, int nodeNum)
 					buf->end = max(buf->end, buf1->end);
 					buf->destNode = nodeNum - n;
 					buf->merged = 1;
+					buf->srcNode= nodeNum;
+					buf->len= buf->len+ buf1->len;
 
 					if (send(readconfd, buf, sizeof(struct buffer), 0) < 0)
 					{
@@ -203,8 +204,10 @@ int newNode(int port1, int port2, pid_t parent, int nodeNum)
 					int sz = buf->len + buf1->len;
 					buf->start = min(buf->start, buf1->start);
 					buf->end = max(buf->end, buf1->end);
-					buf->destNode = nodeNum+1;
+					buf->destNode = nodeNum;
 					buf->merged = 1;
+					buf->srcNode= nodeNum;
+					buf->len= buf->len+ buf1->len;
 
 					if (send(readconfd, buf, sizeof(struct buffer), 0) < 0)
 					{
@@ -214,8 +217,7 @@ int newNode(int port1, int port2, pid_t parent, int nodeNum)
 			}
 			else
 			{
-
-				printf("Node-%d recieved unmerged for dest= %d, Src= %d start= %d end= %d\n", nodeNum, buf->destNode, buf->srcNode, buf->start, buf->end);
+				printf("Node-%d recieved unmerged for dest= %d, Src= %d start= %d end= %d len= %d\n", nodeNum, buf->destNode, buf->srcNode, buf->start, buf->end, buf->len);
                 // for(int i=0; i<N; i++){
                 //     printf("%d", buf->arr[i]);
                 // }
@@ -224,6 +226,7 @@ int newNode(int port1, int port2, pid_t parent, int nodeNum)
 				{
 					buf->start = buf->start;
 					buf->end = buf->end;
+					buf->srcNode= nodeNum;
 					if ((nodeNum) % 2 == 0)
 						buf->destNode = buf->start;
 					else
@@ -240,18 +243,21 @@ int newNode(int port1, int port2, pid_t parent, int nodeNum)
 				{
 					int start = buf->start;
 					buf->start = start + buf->len / 2;
-					buf->end = buf->start + buf->len - 1;
+					buf->end = buf->start + buf->len/2 - 1;
+					int len= buf->len;
+					buf->len= buf->len/2;
 					buf->destNode = buf->start;
 					buf->merged = 0;
+					buf->srcNode= nodeNum;
 
 					if (send(readconfd, buf, sizeof(struct buffer), 0) < 0)
 					{
 						perror("Send error");
 					}
 
-					buf->len = buf->len - buf->len / 2;
+					buf->len = len - len / 2;
 					buf->start = start;
-					buf->end = buf->start + buf->len / 2 - 1;
+					buf->end = buf->start + len / 2 - 1;
 					buf->destNode = start;
 					buf->merged = 0;
 
