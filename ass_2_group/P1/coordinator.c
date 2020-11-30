@@ -4,7 +4,7 @@
 
 int main(int argc, char *argv[])
 {
-    int p1= 35402;
+    int p1= 47430;
     int p2= p1 + 1;
     printf("\np1= %d!\np2= %d\n", p1, p2);
     int n = atoi(argv[1]);
@@ -140,7 +140,7 @@ int main(int argc, char *argv[])
 
         if (buf->destNode != 0)
         {
-            printf("Root recieved for dest= %d\n", buf->destNode);
+            // printf("Root recieved for dest= %d Src= %d start= %d end= %d\n", buf->destNode, buf->srcNode, buf->start, buf->end);
             if (send(readconfd, buf, sizeof(struct buffer), 0) < 0)
             {
                 perror("Send error");
@@ -151,11 +151,10 @@ int main(int argc, char *argv[])
             
             if (buf->merged)
             {
-                printf("Root recieved merged for dest= 0\n");
-                printf("start= %d end= %d\n    ", buf->start, buf->end);
-                for(int i=0; i<n; i++){
-                    printf("%d", buf->arr[i]);
-                }
+                printf("Root recieved merged for dest= 0 Src= %d start= %d end= %d\n", buf->srcNode, buf->start, buf->end);
+                // for(int i=0; i<n; i++){
+                //     printf("%d", buf->arr[i]);
+                // }
                 cnt++;
                 if (cnt != 2)
                 {
@@ -168,9 +167,9 @@ int main(int argc, char *argv[])
                 if (buf->len == n - n / 2 || buf->len == n / 2)
                 {
                     merge(buf->arr, 0, n/2 -1, n-1);
-                    printf("Sorted array :\n");
-                    for(int i=0; i<n; i++)
-                        printf("%d ", buf->arr[i]);
+                    // printf("Sorted array :\n");
+                    // for(int i=0; i<n; i++)
+                    //     printf("%d ", buf->arr[i]);
                     return 0; // Final list obtained
                 }
                 else
@@ -190,11 +189,10 @@ int main(int argc, char *argv[])
             }
             else
             {
-                printf("Root recieved unmerged for dest= 0\n");
-                printf("start= %d end= %d\n    ", buf->start, buf->end);
-                for(int i=0; i<n; i++){
-                    printf("%d", buf->arr[i]);
-                }
+                printf("Root recieved unmerged for dest= 0 Src= %d start= %d end= %d\n", buf->srcNode, buf->start, buf->end);
+                // for(int i=0; i<n; i++){
+                //     printf("%d", buf->arr[i]);
+                // }
                 if (buf->len == 1)
                 {
                     sz = 1;

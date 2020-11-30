@@ -72,6 +72,7 @@ int merge(int arr[], int l, int m, int r)
 int newNode(int port1, int port2, pid_t parent, int nodeNum)
 {
 	printf("****************\n");
+	printf("Nodenum= %d\n", nodeNum);
 	printf("\nPort1= %d Port2= %d\n", port1, port2);
 
 	int readfd, readconfd, wrtfd, wrtconfd;
@@ -132,7 +133,9 @@ int newNode(int port1, int port2, pid_t parent, int nodeNum)
 	printf("Accepting port= %d\n", port2);
 
 	int len;
-	readconfd = accept(wrtfd, (SA *)&node, &len);
+	if((readconfd = accept(wrtfd, (SA *)&node, &len))<0){
+		perror("accept error in child : ");
+	}
 	printf("Done\n");
 	// close the socket
 
@@ -143,19 +146,17 @@ int newNode(int port1, int port2, pid_t parent, int nodeNum)
 
 	for (;;)
 	{
-		int l;
 		if (recv(readfd, buf, sizeof(struct buffer), 0) < 0)
 		{
 			perror("Read error in child");
 		}
-		// printf("Node-%d read: %d bytes. Dest= %d\n", nodeNum, l, buf->destNode);
-		// printf("Buf->leng= %d\n", buf->len);
+		// printf("Node-%d read. Dest= %d Src= %d Length= %d start= %d end= %d\n", nodeNum, buf->destNode, buf->srcNode, buf->len, buf->start, buf->end);
 		// for(int i=0; i<buf->len; i++)
 		//     printf("%d ", buf->arr[i]);
 		// printf("\n");
 		if (buf->destNode != nodeNum)
 		{
-			printf("Node-%d recieved for dest= %d\n", nodeNum, buf->destNode);
+			// printf("Node-%d recieved for dest= %d\n", nodeNum, buf->destNode);
 			if (send(readconfd, buf, sizeof(struct buffer), 0) < 0)
 			{
 				perror("Send error test");
@@ -166,11 +167,10 @@ int newNode(int port1, int port2, pid_t parent, int nodeNum)
 			if (buf->merged)
 			{
 
-				printf("Node-%d recieved merged for dest= %d\n", nodeNum, buf->destNode);
-                printf("start= %d end= %d\n    ", buf->start, buf->end);
-                for(int i=0; i<N; i++){
-                    printf("%d", buf->arr[i]);
-                }
+				printf("Node-%d recieved merged for dest= %d, Src= %d start= %d end= %d\n", nodeNum, buf->destNode, buf->srcNode, buf->start, buf->end);
+                // for(int i=0; i<N; i++){
+                //     printf("%d", buf->arr[i]);
+                // }
 
 				cnt++;
 				if (cnt != 2)
@@ -189,7 +189,7 @@ int newNode(int port1, int port2, pid_t parent, int nodeNum)
 
 					buf->start = min(buf->start, buf1->start);
 					buf->end = max(buf->end, buf1->end);
-					buf->destNode = nodeNum - n -1;
+					buf->destNode = nodeNum - n;
 					buf->merged = 1;
 
 					if (send(readconfd, buf, sizeof(struct buffer), 0) < 0)
@@ -203,7 +203,7 @@ int newNode(int port1, int port2, pid_t parent, int nodeNum)
 					int sz = buf->len + buf1->len;
 					buf->start = min(buf->start, buf1->start);
 					buf->end = max(buf->end, buf1->end);
-					buf->destNode = nodeNum;
+					buf->destNode = nodeNum+1;
 					buf->merged = 1;
 
 					if (send(readconfd, buf, sizeof(struct buffer), 0) < 0)
@@ -215,11 +215,10 @@ int newNode(int port1, int port2, pid_t parent, int nodeNum)
 			else
 			{
 
-				printf("Node-%d recieved unmerged for dest= %d\n", nodeNum, buf->destNode);
-                printf("start= %d end= %d\n    ", buf->start, buf->end);
-                for(int i=0; i<N; i++){
-                    printf("%d", buf->arr[i]);
-                }
+				printf("Node-%d recieved unmerged for dest= %d, Src= %d start= %d end= %d\n", nodeNum, buf->destNode, buf->srcNode, buf->start, buf->end);
+                // for(int i=0; i<N; i++){
+                //     printf("%d", buf->arr[i]);
+                // }
 
 				if (buf->len == 1)
 				{
