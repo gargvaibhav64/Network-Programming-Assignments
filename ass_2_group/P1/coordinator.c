@@ -2,6 +2,14 @@
 
 #define SA struct sockaddr
 
+int gotalarm;
+
+void sig_alrm(int signo)
+{
+	gotalarm = 1;	/* set flag to note that alarm occurred */
+	return;			/* and interrupt the recvfrom() */
+}
+
 int main(int argc, char *argv[])
 {
     srand(time(NULL));
@@ -11,6 +19,8 @@ int main(int argc, char *argv[])
     int n = atoi(argv[1]);
     N = n;
     int readfd, readconfd, wrtfd, wrtconfd;
+
+    signal(SIGALRM, sig_alrm);
 
     // Reading
 
@@ -64,7 +74,10 @@ int main(int argc, char *argv[])
         pid_t pid = fork();
         if (pid > 0)
         {
-            sleep(1);
+            while(gotalarm == 0){
+
+            }
+            gotalarm = 0;
             printf("Tets\n");
         }
         else
@@ -81,7 +94,14 @@ int main(int argc, char *argv[])
     // Child process ends
 
     int len;
-    readconfd = accept(wrtfd, (SA *)&waddr[1], &len);
+    
+
+    if ((readconfd = accept(wrtfd, (SA *)&waddr[0], &len)) < 0)
+    {
+        printf("connection with the server failed...\n");
+        perror("Server : accept() ");
+        exit(0);
+    }
 
     // connect the client socket to server socket
     if (connect(readfd, (SA *)&addr[0], sizeof(addr[0])) != 0)
@@ -114,6 +134,7 @@ int main(int argc, char *argv[])
     if (send(readconfd, buf, sizeof(struct buffer), 0) < 0)
     {
         perror("Send error");
+        exit(0);
     }
 
     sz = n - n / 2;
@@ -125,6 +146,7 @@ int main(int argc, char *argv[])
     if (send(readconfd, buf, sizeof(struct buffer), 0) < 0)
     {
         perror("Send error");
+        exit(0);
     }
 
     printf("Sent!\n");
@@ -143,6 +165,7 @@ int main(int argc, char *argv[])
         if (recv(readfd, buf, sizeof(struct buffer), 0) < 0)
         {
             perror("Read error");
+            exit(0);
         }
 
         if (buf->destNode != 0)
@@ -151,6 +174,7 @@ int main(int argc, char *argv[])
             if (send(readconfd, buf, sizeof(struct buffer), 0) < 0)
             {
                 perror("Send error");
+                exit(0);
             }
         }
         else
@@ -252,6 +276,7 @@ int main(int argc, char *argv[])
                     if (send(readconfd, buf, sizeof(struct buffer), 0) < 0)
                     {
                         perror("Send error");
+                        exit(0);
                     }
                 }
                 else
@@ -265,6 +290,7 @@ int main(int argc, char *argv[])
                     if (send(readconfd, buf, sizeof(struct buffer), 0) < 0)
                     {
                         perror("Send error");
+                        exit(0);
                     }
 
                     sz = n - n / 2;
@@ -276,6 +302,7 @@ int main(int argc, char *argv[])
                     if (send(readconfd, buf, sizeof(struct buffer), 0) < 0)
                     {
                         perror("Send error");
+                        exit(0);
                     }
                 }
             }

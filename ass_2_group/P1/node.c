@@ -202,13 +202,14 @@ int newNode(int port1, int port2, pid_t parent, int nodeNum)
 		exit(0);
 	}
 
-	// kill(parent, SIGCHLD);
+	kill(parent, SIGALRM);
 
 	printf("Accepting port= %d\n", port2);
 
 	int len;
 	if((readconfd = accept(wrtfd, (SA *)&node, &len))<0){
 		perror("accept error in child : ");
+		exit(0);
 	}
 	printf("Done\n");
 	// close the socket
@@ -226,6 +227,7 @@ int newNode(int port1, int port2, pid_t parent, int nodeNum)
 		if (recv(readfd, buf, sizeof(struct buffer), 0) < 0)
 		{
 			perror("Read error in child");
+			exit(0);
 		}
 		// printf("Node-%d read. Dest= %d Src= %d Length= %d start= %d end= %d\n", nodeNum, buf->destNode, buf->srcNode, buf->len, buf->start, buf->end);
 		// for(int i=0; i<buf->len; i++)
@@ -237,6 +239,7 @@ int newNode(int port1, int port2, pid_t parent, int nodeNum)
 			if (send(readconfd, buf, sizeof(struct buffer), 0) < 0)
 			{
 				perror("Send error test");
+				exit(0);
 			}
 		}
 		else
@@ -290,6 +293,7 @@ int newNode(int port1, int port2, pid_t parent, int nodeNum)
 					if (send(readconfd, buf, sizeof(struct buffer), 0) < 0)
 					{
 						perror("Send error");
+						exit(0);
 					}
 				}
 				else
@@ -348,6 +352,7 @@ int newNode(int port1, int port2, pid_t parent, int nodeNum)
 					if (send(readconfd, buf, sizeof(struct buffer), 0) < 0)
 					{
 						perror("Send error");
+						exit(0);
 					}
 				}
 				else
@@ -364,6 +369,7 @@ int newNode(int port1, int port2, pid_t parent, int nodeNum)
 					if (send(readconfd, buf, sizeof(struct buffer), 0) < 0)
 					{
 						perror("Send error");
+						exit(0);
 					}
 
 					buf->len = len - len / 2;
@@ -375,6 +381,7 @@ int newNode(int port1, int port2, pid_t parent, int nodeNum)
 					if (send(readconfd, buf, sizeof(struct buffer), 0) < 0)
 					{
 						perror("Send error");
+						exit(0);
 					}
 				}
 			}
