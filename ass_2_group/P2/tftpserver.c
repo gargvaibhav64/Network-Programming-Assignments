@@ -8,6 +8,7 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <time.h>
+#include <sys/time.h>
 
 #define MAX_CLIENTS 100
 #define RECV_TIMEOUT 5
