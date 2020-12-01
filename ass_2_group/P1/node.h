@@ -27,4 +27,6 @@ int newNode(int , int, pid_t, int);
 int N;
 int max(int, int);
 int min(int, int);
-int merge(int arr[], int l, int m, int r);
+int merge(int arr[], int l, int m, int r, int ret[], int *retlen);
+int merge2(int arr[], int l, int m, int r);
+int mergeUtil(int buf[], int ret[], int l1, int e1, int l2, int e2, int *retlen);

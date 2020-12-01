@@ -23,7 +23,16 @@ int getCount(int n)
 	return (int)pow(2.0, cnt);
 }
 
-int merge(int arr[], int l, int m, int r)
+int mergeUtil(int buf[], int ret[], int l1, int e1, int l2, int e2, int *retlen){
+	int tarr[MAX];
+	for(int i=0; i< e1-l1 +1; i++){
+		ret[e2+i]= buf[l1+i];
+	}
+	*retlen= *retlen + e1-l1+1;
+	merge2(ret, 0, e2, e2+e1-l1+1);
+}
+
+int merge(int arr[], int l, int m, int r, int ret[], int *retlen)
 {
 	int i, j, k;
 	int n1 = m - l + 1;
@@ -39,6 +48,56 @@ int merge(int arr[], int l, int m, int r)
 	i = 0;
 	j = 0;
 	k = l;
+
+	while (i < n1 && j < n2)
+	{
+		if (L[i] <= R[j])
+		{
+			arr[k] = L[i];
+			ret[(*retlen)++]= arr[k];
+			i++;
+		}
+		else
+		{
+			arr[k] = R[j];
+			ret[(*retlen)++]= arr[k];
+			j++;
+		}
+		k++;
+	}
+
+	while (i < n1)
+	{
+		arr[k] = L[i];
+		i++;
+		k++;
+	}
+
+	while (j < n2)
+	{
+		arr[k] = R[j];
+		j++;
+		k++;
+	}
+}
+
+int merge2(int arr[], int l, int m, int r)
+{
+	int i, j, k;
+	int n1 = m - l + 1;
+	int n2 = r - m;
+
+	int L[n1], R[n2];
+
+	for (i = 0; i < n1; i++)
+		L[i] = arr[l + i];
+	for (j = 0; j < n2; j++)
+		R[j] = arr[m + 1 + j];
+
+	i = 0;
+	j = 0;
+	k = l;
+
 	while (i < n1 && j < n2)
 	{
 		if (L[i] <= R[j])
@@ -142,7 +201,10 @@ int newNode(int port1, int port2, pid_t parent, int nodeNum)
 	struct buffer *buf = (struct buffer *)malloc(sizeof(struct buffer));
 
 	int cnt = 0;
+	int mergeSize= 0;
 	struct buffer *buf1 = (struct buffer *)malloc(sizeof(struct buffer));
+	int ret[MAX];
+	int retcnt=0;
 
 	for (;;)
 	{
@@ -166,25 +228,35 @@ int newNode(int port1, int port2, pid_t parent, int nodeNum)
 		{
 			if (buf->merged)
 			{
+				mergeSize+= buf->len;
 				printf("Node-%d recieved merged for dest= %d, Src= %d start= %d end= %d len= %d\n", nodeNum, buf->destNode, buf->srcNode, buf->start, buf->end, buf->len);
                 // for(int i=0; i<N; i++){
                 //     printf("%d", buf->arr[i]);
                 // }
 
 				cnt++;
-				if (cnt != 2)
+				if (cnt < 2)
 				{
 					memcpy(buf1, buf, sizeof(struct buffer));
 					continue;
 				}
 
-				cnt = 0;
+				// cnt = 0;
 
 				int n = getCount(nodeNum);
 
-				if (buf->len == n - n / 2 || buf->len == n / 2)
+				if (mergeSize== n)
 				{
-					merge(buf->arr, min(buf->start, buf1->start), min(buf->end, buf1->end), max(buf->end, buf1->end));
+					// merge(buf->arr, min(buf->start, buf1->start), min(buf->end, buf1->end), max(buf->end, buf1->end));
+					mergeUtil(buf->arr, ret, buf->start, buf->end, 0, retcnt-1, &retcnt);
+                    printf("\n");
+					for(int i= 0; i<n+1; i++){
+						buf->arr[i+nodeNum]= ret[i];
+					}
+                    for(int i=0; i<N; i++){
+                        printf("%d", buf->arr[i]);
+                    }
+                    printf("\n");
 
 					buf->start = min(buf->start, buf1->start);
 					buf->end = max(buf->end, buf1->end);
@@ -200,7 +272,17 @@ int newNode(int port1, int port2, pid_t parent, int nodeNum)
 				}
 				else
 				{
-					merge(buf->arr, min(buf->start, buf1->start), min(buf->end, buf1->end), max(buf->end, buf1->end));
+					if(cnt==2)
+						merge(buf->arr, min(buf->start, buf1->start), min(buf->end, buf1->end), max(buf->end, buf1->end), ret, &retcnt);
+					else{
+						mergeUtil(buf->arr, ret, buf->start, buf->end, 0, retcnt-1, &retcnt);
+					}
+                    printf("\n");
+                    for(int i=0; i<retcnt; i++){
+                        printf("%d", ret[i]);
+                    }
+                    printf("\n");
+					
 					int sz = buf->len + buf1->len;
 					buf->start = min(buf->start, buf1->start);
 					buf->end = max(buf->end, buf1->end);
@@ -208,6 +290,8 @@ int newNode(int port1, int port2, pid_t parent, int nodeNum)
 					buf->merged = 1;
 					buf->srcNode= nodeNum;
 					buf->len= buf->len+ buf1->len;
+
+					memcpy(buf1, buf, sizeof(struct buffer));
 
 					if (send(readconfd, buf, sizeof(struct buffer), 0) < 0)
 					{

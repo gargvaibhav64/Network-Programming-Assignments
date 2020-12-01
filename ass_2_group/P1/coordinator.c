@@ -5,7 +5,7 @@
 int main(int argc, char *argv[])
 {
     srand(time(NULL));
-    int p1= 20000 + rand()%30000;
+    int p1= 25000 + rand()%20000;
     int p2= p1 + 1;
     printf("\np1= %d!\np2= %d\n", p1, p2);
     int n = atoi(argv[1]);
@@ -130,8 +130,13 @@ int main(int argc, char *argv[])
     printf("Sent!\n");
 
     int cnt = 0;
+    int mergeSize=0;
     //  bzero(buf, 100);
     struct buffer *buf1 = (struct buffer *)malloc(sizeof(struct buffer));
+
+	int ret[MAX];
+	int retcnt=0;
+
     for (;;)
     {
         int l;
@@ -153,22 +158,26 @@ int main(int argc, char *argv[])
             
             if (buf->merged)
             {
+                mergeSize+= buf->len;
                 printf("Root recieved merged for dest= 0 Src= %d start= %d end= %d len= %d\n", buf->srcNode, buf->start, buf->end, buf->len);
                 // for(int i=0; i<n; i++){
                 //     printf("%d", buf->arr[i]);
                 // }
                 cnt++;
-                if (cnt != 2)
+                if (cnt < 2)
                 {
                     memcpy(buf1, buf, sizeof(struct buffer));
                     continue;
                 }
 
-                cnt = 0;
+                // cnt = 0;
 
-                if (buf->len == n - n / 2 || buf->len == n / 2)
+                if (mergeSize == n)
                 {
-                    merge(buf->arr, 0, n/2 -1, n-1);
+					mergeUtil(buf->arr, ret, buf->start, buf->end, 0, retcnt-1, &retcnt);
+					for(int i= 0; i<n+1; i++){
+						buf->arr[i]= ret[i];
+					}
                     printf("Sorted array :\n");
                     for(int i=0; i<n; i++)
                         printf("%d ", buf->arr[i]);
@@ -176,7 +185,24 @@ int main(int argc, char *argv[])
                 }
                 else
                 {
-                    merge(buf->arr, min(buf->start, buf1->start), min(buf->end, buf1->end), max(buf->end, buf1->end));
+					if(cnt==2){
+						merge(buf->arr, min(buf->start, buf1->start), min(buf->end, buf1->end), max(buf->end, buf1->end), ret, &retcnt);
+                        printf("root ret: \n");
+                        for(int i=0; i<N; i++){
+                            printf("ret(%d) ", ret[i]);
+                        }
+                        printf("\n");
+                    }
+                    else{
+						mergeUtil(buf->arr, ret, buf->start, buf->end, 0, retcnt-1, &retcnt);
+					}                    
+                    printf("\n");
+                    for(int i=0; i<retcnt; i++){
+                        printf("%d", ret[i]);
+                    }
+                    printf("\n");
+
+                    
                     sz = buf->len + buf1->len;
                     printf("buf->src= %d buf1->src= %d buflen= %d buf1len= %d\n", buf->srcNode, buf1->srcNode, buf->len, buf1->len);
                     buf->start = 0;
@@ -185,6 +211,9 @@ int main(int argc, char *argv[])
                     buf->merged = 1;
                     buf->srcNode= 0;
                     buf->len= sz;
+                    
+                    memcpy(buf1, buf, sizeof(struct buffer));
+
                     if (send(readconfd, buf, sizeof(struct buffer), 0) < 0)
                     {
                         perror("Send error");
