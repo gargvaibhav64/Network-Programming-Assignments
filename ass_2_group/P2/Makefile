@@ -1,7 +1,7 @@
 all: clean tftp
 
 clean: 
-	rm tftp
+	- rm tftp
 
 tftp:
 	gcc -g -o tftp tftpserver.c
