@@ -5,7 +5,7 @@
 int main(int argc, char *argv[])
 {
     srand(time(NULL));
-    int p1= 25000 + rand()%20000;
+    int p1= 30000 + rand()%20000;
     int p2= p1 + 1;
     printf("\np1= %d!\np2= %d\n", p1, p2);
     int n = atoi(argv[1]);
@@ -154,8 +154,7 @@ int main(int argc, char *argv[])
             }
         }
         else
-        {
-            
+        {            
             if (buf->merged)
             {
                 mergeSize+= buf->len;
@@ -167,6 +166,13 @@ int main(int argc, char *argv[])
                 if (cnt < 2)
                 {
                     memcpy(buf1, buf, sizeof(struct buffer));
+                    retcnt= buf->len;
+                    printf("Setting retcnt in root= %d\n", retcnt);
+                    for(int i= 0; i<retcnt; i++){
+                        ret[i]= buf->arr[buf->start+i];
+                        printf("%d ", ret[i]);
+                    }
+                    printf("retend\n");
                     continue;
                 }
 
@@ -180,31 +186,40 @@ int main(int argc, char *argv[])
 					}
                     printf("Sorted array :\n");
                     for(int i=0; i<n; i++)
-                        printf("%d ", buf->arr[i]);
+                        printf("%d ", ret[i]);
+
+                    
                     return 0; // Final list obtained
                 }
                 else
                 {
-					if(cnt==2){
-						merge(buf->arr, min(buf->start, buf1->start), min(buf->end, buf1->end), max(buf->end, buf1->end), ret, &retcnt);
-                        printf("root ret: \n");
-                        for(int i=0; i<N; i++){
-                            printf("ret(%d) ", ret[i]);
-                        }
-                        printf("\n");
-                    }
-                    else{
-						mergeUtil(buf->arr, ret, buf->start, buf->end, 0, retcnt-1, &retcnt);
-					}                    
+					// if(cnt==2){
+					// 	merge(buf->arr, min(buf->start, buf1->start), min(buf->end, buf1->end), max(buf->end, buf1->end), ret, &retcnt);
+                    //     printf("root ret with retcnt= %d: \n", retcnt);
+                    //     for(int i=0; i<retcnt; i++){
+                    //         printf("ret(%d) ", ret[i]);
+                    //     }
+                    //     printf("\n");
+                    // }
+                    // else{
+					// 	mergeUtil(buf->arr, ret, buf->start, buf->end, 0, retcnt-1, &retcnt);
+					// }     
+                    printf("Calling megeutil\n");
+                    mergeUtil(buf->arr, ret, buf->start, buf->end, 0, retcnt-1, &retcnt);
+                    printf("After megeutil\n");
+                    for(int i=0; i<retcnt; i++)
+                        printf("%d ", ret[i]);
                     printf("\n");
-                    for(int i=0; i<retcnt; i++){
-                        printf("%d", ret[i]);
-                    }
-                    printf("\n");
+                    // printf("\n");
+                    // for(int i=0; i<retcnt; i++){
+                    //     printf("%d", ret[i]);
+                    // }
+                    // printf("\n");
 
-                    
+                    // memcpy(buf->arr, ret, sizeof(buf->arr));
+
                     sz = buf->len + buf1->len;
-                    printf("buf->src= %d buf1->src= %d buflen= %d buf1len= %d\n", buf->srcNode, buf1->srcNode, buf->len, buf1->len);
+                    // printf("buf->src= %d buf1->src= %d buflen= %d buf1len= %d\n", buf->srcNode, buf1->srcNode, buf->len, buf1->len);
                     buf->start = 0;
                     buf->end = sz - 1;
                     buf->destNode = 0;
@@ -212,12 +227,11 @@ int main(int argc, char *argv[])
                     buf->srcNode= 0;
                     buf->len= sz;
                     
-                    memcpy(buf1, buf, sizeof(struct buffer));
-
-                    if (send(readconfd, buf, sizeof(struct buffer), 0) < 0)
-                    {
-                        perror("Send error");
-                    }
+                    // memcpy(buf1, buf, sizeof(struct buffer));
+                    // if (send(readconfd, buf, sizeof(struct buffer), 0) < 0)
+                    // {
+                    //     perror("Send error");
+                    // }
                 }
             }
             else

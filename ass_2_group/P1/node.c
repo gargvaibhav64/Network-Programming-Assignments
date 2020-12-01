@@ -25,11 +25,26 @@ int getCount(int n)
 
 int mergeUtil(int buf[], int ret[], int l1, int e1, int l2, int e2, int *retlen){
 	int tarr[MAX];
+	
+	printf("Merge util got l1= %d e1= %d l2= %d e2= %d: retlen= %d\n", l1, e1, l2, e2, *retlen);
+	for(int i=0; i<e1-l1+1; i++)
+		printf("[%d] ", buf[l1+i]);
+	printf("\n");
+	for(int i=0; i<e2-l2+1; i++)
+		printf("(%d) ", ret[i]);
+	printf("\n");
 	for(int i=0; i< e1-l1 +1; i++){
-		ret[e2+i]= buf[l1+i];
+		ret[e2+i+1]= buf[l1+i];
 	}
 	*retlen= *retlen + e1-l1+1;
-	merge2(ret, 0, e2, e2+e1-l1+1);
+
+	for(int i=0; i<*retlen; i++)
+		printf("{%d} ", ret[i]);
+	printf("\n");
+	merge2(ret, 0, e2, *retlen-1);
+	for(int i=0; i<*retlen; i++)
+		printf("%d ", ret[i]);
+	printf("\nend\n");
 }
 
 int merge(int arr[], int l, int m, int r, int ret[], int *retlen)
@@ -238,6 +253,9 @@ int newNode(int port1, int port2, pid_t parent, int nodeNum)
 				if (cnt < 2)
 				{
 					memcpy(buf1, buf, sizeof(struct buffer));
+                    retcnt= buf->end- buf->start+ 1;
+                    for(int i= 0; i<retcnt; i++)
+                        ret[i]= buf->arr[buf->start+i];
 					continue;
 				}
 
@@ -248,15 +266,19 @@ int newNode(int port1, int port2, pid_t parent, int nodeNum)
 				if (mergeSize== n)
 				{
 					// merge(buf->arr, min(buf->start, buf1->start), min(buf->end, buf1->end), max(buf->end, buf1->end));
+					printf("Calling mergeutil nonRoot with\n");
 					mergeUtil(buf->arr, ret, buf->start, buf->end, 0, retcnt-1, &retcnt);
-                    printf("\n");
-					for(int i= 0; i<n+1; i++){
+                    printf("mergeutil ended nonRoot\n");
+					for(int i= 0; i<n; i++){
 						buf->arr[i+nodeNum]= ret[i];
 					}
-                    for(int i=0; i<N; i++){
-                        printf("%d", buf->arr[i]);
-                    }
-                    printf("\n");
+                    // for(int i=0; i<N; i++){
+                    //     printf("%d", buf->arr[i]);
+                    // }
+                    // printf("\n");
+
+                    // memcpy(buf->arr, ret, sizeof(buf->arr));
+
 
 					buf->start = min(buf->start, buf1->start);
 					buf->end = max(buf->end, buf1->end);
@@ -272,16 +294,21 @@ int newNode(int port1, int port2, pid_t parent, int nodeNum)
 				}
 				else
 				{
-					if(cnt==2)
-						merge(buf->arr, min(buf->start, buf1->start), min(buf->end, buf1->end), max(buf->end, buf1->end), ret, &retcnt);
-					else{
-						mergeUtil(buf->arr, ret, buf->start, buf->end, 0, retcnt-1, &retcnt);
-					}
-                    printf("\n");
-                    for(int i=0; i<retcnt; i++){
-                        printf("%d", ret[i]);
-                    }
-                    printf("\n");
+					// if(cnt==2)
+					// 	merge(buf->arr, min(buf->start, buf1->start), min(buf->end, buf1->end), max(buf->end, buf1->end), ret, &retcnt);
+					// else{
+					// 	mergeUtil(buf->arr, ret, buf->start, buf->end, 0, retcnt-1, &retcnt);
+					// }
+                    mergeUtil(buf->arr, ret, buf->start, buf->end, 0, retcnt-1, &retcnt);
+
+                    // printf("\n");
+                    // for(int i=0; i<retcnt; i++){
+                    //     printf("%d", ret[i]);
+                    // }
+                    // printf("\n");
+
+                    // memcpy(buf->arr, ret, sizeof(buf->arr));
+
 					
 					int sz = buf->len + buf1->len;
 					buf->start = min(buf->start, buf1->start);
@@ -293,10 +320,10 @@ int newNode(int port1, int port2, pid_t parent, int nodeNum)
 
 					memcpy(buf1, buf, sizeof(struct buffer));
 
-					if (send(readconfd, buf, sizeof(struct buffer), 0) < 0)
-					{
-						perror("Send error");
-					}
+					// if (send(readconfd, buf, sizeof(struct buffer), 0) < 0)
+					// {
+					// 	perror("Send error");
+					// }
 				}
 			}
 			else
