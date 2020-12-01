@@ -7,7 +7,11 @@
 #include <errno.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <time.h>
+
 #define MAX_CLIENTS 100
+#define RECV_TIMEOUT 5
+#define RECV_RETRIES 3
 
 #define max(a,b) (((a)>(b))?(a):(b))
 
@@ -60,6 +64,8 @@ typedef struct {
     int prev_data_size;
     char * filename;
     char last_data[512];
+    struct timeval last_time;
+    int num_retry;
 } clients;
 
 tftp_message t;
@@ -184,18 +190,18 @@ int main(int argc, char *argv[]) {
             }
         }
 
-        struct timeval tval = {3, 0};
+        struct timeval tval = {1, 0};
 
         // printf("Here\n");
 
-        // if((nready = select(maxfdp1, &rset, NULL, NULL, &tval)) < 0){
-        //     perror("select : ");
-        // }
-
-        // Without timeval
-        if((nready = select(maxfdp1, &rset, NULL, NULL, NULL)) < 0){
+        if((nready = select(maxfdp1, &rset, NULL, NULL, &tval)) < 0){
             perror("select : ");
         }
+
+        // Without timeval
+        // if((nready = select(maxfdp1, &rset, NULL, NULL, NULL)) < 0){
+        //     perror("select : ");
+        // }
 
         // printf("Here %d\n", nready);
 
@@ -300,6 +306,9 @@ int main(int argc, char *argv[]) {
                 client[cl_num].port = serv_cl.sin_port;
                 client[cl_num].filename = (char *) malloc (sizeof(char) * (strlen(filename) + 1));
                 strcpy(client[cl_num].filename,filename);
+                client[cl_num].last_time.tv_sec = 0;
+                client[cl_num].last_time.tv_usec = 0;
+                client[cl_num].num_retry = 0;
 
                 cl_num++;
 
@@ -315,76 +324,151 @@ int main(int argc, char *argv[]) {
                         opcode);
                 tftp_error(sockfd, 0, "invalid opcode", &client_sock, slen);
             }
-        } 
-        // else 
-        // {
-            for(int i = 0 ; i < cl_num ; i++)
+        }
+        
+        for(int i = 0 ; i < cl_num ; i++)
+        {
+            // printf("Works\n");
+            int err_flag = 0;
+
+            if((client[i].filefd != NULL && FD_ISSET(client[i].sockfd, &rset)) 
+                    || client[i].prev_data_size == -1) 
             {
-                // printf("Works\n");
-                int err_flag = 0;
 
-                if((client[i].filefd != NULL && FD_ISSET(client[i].sockfd, &rset)) 
-                        || client[i].prev_data_size == -1) 
-                {
+                if(client[i].prev_data_size != -1){
 
-                    if(client[i].prev_data_size != -1){
-
-                        if ((msglen = tftp_recv(client[i].sockfd, &msg, &client[i].client_sock, &client[i].clilen)) < 0) {
-                            continue;
-                        }
-
-                        if (msglen < 4) { 
-                            printf("%s:%u: request with invalid size received\n",
-                                    inet_ntoa(client[i].client_sock.sin_addr), ntohs(client[i].client_sock.sin_port));
-                            tftp_error(client[i].sockfd, 0, "invalid request size", &client_sock, slen);
-                            continue;
-                        }
-
-                        if (ntohs(msg.opcode) == ERROR)  {
-                            printf("%s:%u: error message received: %u %s\n",
-                                    inet_ntoa(client[i].client_sock.sin_addr), ntohs(client[i].client_sock.sin_port),
-                                    ntohs(msg.msg.error.error_code), msg.msg.error.error_string);
-                            
-                            err_flag = 1;
-                            // Close connection
-                        }
-
-                        if (ntohs(msg.opcode) != ACK)  {
-                            printf("%s.%u: invalid message during transfer received\n",
-                                inet_ntoa(client[i].client_sock.sin_addr), ntohs(client[i].client_sock.sin_port));
-                            tftp_error(client[i].sockfd, 0, "invalid message during transfer", &client_sock, slen);
-
-                            err_flag = 1;
-                                
-                            // Close connection
-                        }
-
-                        if (ntohs(msg.msg.ack.block_number) != client[i].block_num) { // the ack number is too high
-                            printf("%s:%u: invalid ack number received\n", 
-                                inet_ntoa(client[i].client_sock.sin_addr), ntohs(client[i].client_sock.sin_port));
-                            tftp_error(client[i].sockfd, 0, "invalid ack number", &client_sock, slen);
-
-                            err_flag = 1;
-
-                            // Close connection
-                        }
-
-                        printf("%s:%u: ACK received: '%s' block: %d\n", 
-                            inet_ntoa(client[i].client_sock.sin_addr), ntohs(client[i].client_sock.sin_port),
-                            client[i].filename, ntohs(msg.msg.ack.block_number));
-
+                    if ((msglen = tftp_recv(client[i].sockfd, &msg, &client[i].client_sock, &client[i].clilen)) < 0) {
+                        continue;
                     }
-                    
-                    char data[512];
 
-                    int dlen;
+                    if (msglen < 4) { 
+                        printf("%s:%u: request with invalid size received\n",
+                                inet_ntoa(client[i].client_sock.sin_addr), ntohs(client[i].client_sock.sin_port));
+                        tftp_error(client[i].sockfd, 0, "invalid request size", &client_sock, slen);
+                        continue;
+                    }
 
-                    dlen = fread(data, 1, sizeof(data), client[i].filefd);
+                    if (ntohs(msg.opcode) == ERROR)  {
+                        printf("%s:%u: error message received: %u %s\n",
+                                inet_ntoa(client[i].client_sock.sin_addr), ntohs(client[i].client_sock.sin_port),
+                                ntohs(msg.msg.error.error_code), msg.msg.error.error_string);
+                        
+                        err_flag = 1;
+                        // Close connection
+                    }
 
-                    if(dlen == 0 || err_flag == 1){
-                        // Connection completed in normal cases
-                        FD_CLR(client[i].sockfd, &rset);
+                    if (ntohs(msg.opcode) != ACK)  {
+                        printf("%s.%u: invalid message during transfer received\n",
+                            inet_ntoa(client[i].client_sock.sin_addr), ntohs(client[i].client_sock.sin_port));
+                        tftp_error(client[i].sockfd, 0, "invalid message during transfer", &client_sock, slen);
 
+                        err_flag = 1;
+                            
+                        // Close connection
+                    }
+
+                    if (ntohs(msg.msg.ack.block_number) != client[i].block_num) { // the ack number is too high
+                        printf("%s:%u: invalid ack number received\n", 
+                            inet_ntoa(client[i].client_sock.sin_addr), ntohs(client[i].client_sock.sin_port));
+                        tftp_error(client[i].sockfd, 0, "invalid ack number", &client_sock, slen);
+
+                        err_flag = 1;
+
+                        // Close connection
+                    }
+
+                    printf("%s:%u: ACK received: '%s' block: %d\n", 
+                        inet_ntoa(client[i].client_sock.sin_addr), ntohs(client[i].client_sock.sin_port),
+                        client[i].filename, ntohs(msg.msg.ack.block_number));
+
+                }
+                
+                char data[512];
+
+                int dlen;
+
+                dlen = fread(data, 1, sizeof(data), client[i].filefd);
+
+                if(dlen == 0 || err_flag == 1){
+                    // Connection completed in normal cases
+                    FD_CLR(client[i].sockfd, &rset);
+
+                    if(maxfdp1 == client[i].sockfd + 1){
+                        maxfdp1--;
+                    }
+
+                    close(client[i].sockfd);
+                    fclose(client[i].filefd);
+                    client[i].filefd = NULL;
+
+                    if(err_flag == 0){
+                        printf("%s:%u: Transfer completed: '%s' \n", 
+                                inet_ntoa(client_sock.sin_addr), ntohs(client_sock.sin_port),
+                                client[i].filename);
+                    }
+
+                    continue;
+                }
+
+                client[i].block_num++;
+                client[i].prev_data_size = dlen;
+                
+                int c;
+
+                gettimeofday(&client[i].last_time, NULL);
+                client[i].num_retry = 0;
+
+                c = tftp_send_data(client[i].sockfd, client[i].block_num, &data, dlen, 
+                                        &client[i].client_sock, client[i].clilen);
+
+                strcpy(client[i].last_data, data);
+
+                if (c < 0) {
+                    printf("%s:%u: transfer killed\n",
+                        inet_ntoa(client[i].client_sock.sin_addr), ntohs(client[i].client_sock.sin_port));
+
+                    close(client[i].sockfd);
+                    fclose(client[i].filefd);
+                    client[i].filefd = NULL;
+                }
+                printf("%s:%u: DATA sent: '%s' block: %d\n", 
+                    inet_ntoa(client[i].client_sock.sin_addr), ntohs(client[i].client_sock.sin_port),
+                    client[i].filename, client[i].block_num);
+            }
+        
+            else if (client[i].filefd != NULL) 
+            {
+                struct timeval end;
+                gettimeofday(&end, NULL);
+                double diff_time = (end.tv_sec - client[i].last_time.tv_sec) + 
+                                    (end.tv_usec - client[i].last_time.tv_usec)/1000000.0;
+
+                if(diff_time > RECV_TIMEOUT){
+                    // Retransmit packet
+                    if(client[i].num_retry < RECV_RETRIES)
+                    {
+                        int c;
+                        c = tftp_send_data(client[i].sockfd, client[i].block_num, &client[i].last_data, client[i].prev_data_size, 
+                                                &client[i].client_sock, client[i].clilen);
+
+                        if (c < 0) {
+                            printf("%s:%u: transfer killed\n",
+                                inet_ntoa(client[i].client_sock.sin_addr), ntohs(client[i].client_sock.sin_port));
+
+                            close(client[i].sockfd);
+                            fclose(client[i].filefd);
+                            client[i].filefd = NULL;
+                        }
+                        printf("%s:%u: DATA sent: '%s' block: %d\n", 
+                            inet_ntoa(client[i].client_sock.sin_addr), ntohs(client[i].client_sock.sin_port),
+                            client[i].filename, client[i].block_num);
+
+                        gettimeofday(&client[i].last_time, NULL);
+                        client[i].num_retry++;
+
+                    } 
+                    else 
+                    {
                         if(maxfdp1 == client[i].sockfd + 1){
                             maxfdp1--;
                         }
@@ -393,36 +477,14 @@ int main(int argc, char *argv[]) {
                         fclose(client[i].filefd);
                         client[i].filefd = NULL;
 
-                        if(err_flag == 0){
-                            printf("%s:%u: Transfer completed: '%s' \n", 
-                                    inet_ntoa(client_sock.sin_addr), ntohs(client_sock.sin_port),
-                                    client[i].filename);
-                        }
-
-                        continue;
+                        printf("%s:%u: Transfer timed out: '%s' \n", 
+                                inet_ntoa(client_sock.sin_addr), ntohs(client_sock.sin_port),
+                                client[i].filename);
+                                                
                     }
-
-                    client[i].block_num++;
-                    client[i].prev_data_size = dlen;
-                    
-                    int c;
-
-                    c = tftp_send_data(client[i].sockfd, client[i].block_num, &data, dlen, 
-                                            &client[i].client_sock, client[i].clilen);
-
-                    if (c < 0) {
-                        printf("%s:%u: transfer killed\n",
-                            inet_ntoa(client[i].client_sock.sin_addr), ntohs(client[i].client_sock.sin_port));
-
-                        // Close connection
-                    }
-                    printf("%s:%u: DATA sent: '%s' block: %d\n", 
-                        inet_ntoa(client[i].client_sock.sin_addr), ntohs(client[i].client_sock.sin_port),
-                        client[i].filename, client[i].block_num);
                 }
             }
-        // } // end else 
-
+        }
     }
 
 }
