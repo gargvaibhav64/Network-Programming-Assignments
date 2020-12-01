@@ -14,6 +14,7 @@
 #include	<netinet/ip.h>
 #include	<netinet/ip_icmp.h>
 #include	<netinet/udp.h>
+#include <pthread.h>
 
 #define BUFSIZE 1500
 
