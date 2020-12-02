@@ -4,6 +4,14 @@ int datalen = sizeof(struct rec); /* defaults */
 int max_ttl = 30;
 int nprobes = 3;
 u_short dport = 32768 + 666;
+int done;
+
+pthread_mutex_t sendbuf_mutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_cond_t wait_on_icmp[MAX_TTL];
+pthread_mutex_t wait_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+struct proto proto_v4 = {icmpcode_v4, NULL, NULL,
+                            NULL, NULL, 0, IPPROTO_ICMP, IPPROTO_IP, IP_TTL};
 
 int gotalarm;
 
@@ -15,9 +23,6 @@ void sig_alrm(int signo)
 
 int main(int argc, char *argv[])
 {
-    struct proto proto_v4 = {icmpcode_v4, recv_v4, NULL, NULL,
-                             NULL, NULL, 0, IPPROTO_ICMP, IPPROTO_IP, IP_TTL};
-
     int datalen = sizeof(struct rec);
     int max_ttl = 30;
     int nprobes = 3;
@@ -54,9 +59,9 @@ int main(int argc, char *argv[])
 
     pr = &proto_v4;
     pr->sasend = ai->ai_addr; /*Contains destination address */
-    pr->sarecv = calloc(1, ai->ai_addrlen);
-    pr->salast = calloc(1, ai->ai_addrlen);
-    pr->sabind = calloc(1, ai->ai_addrlen);
+    pr->sarecv = (struct sockaddr *)calloc(1, ai->ai_addrlen);
+    pr->salast = (struct sockaddr *)calloc(1, ai->ai_addrlen);
+    pr->sabind = (struct sockaddr *)calloc(1, ai->ai_addrlen);
     pr->salen = ai->ai_addrlen;
 
     traceloop();
@@ -64,66 +69,209 @@ int main(int argc, char *argv[])
     return 0;
 }
 
-void * ttlUtil(int ttl)
+int process_icmp(char * recvbuf, int n, int seq){
+
+    int				hlen1, hlen2, icmplen, ret;
+	struct ip		*ip, *hip;
+	struct icmp		*icmp;
+	struct udphdr	*udp;
+
+    ip = (struct ip *) recvbuf;	/* start of IP header */
+    hlen1 = ip->ip_hl << 2;		/* length of IP header */
+
+    icmp = (struct icmp *) (recvbuf + hlen1); /* start of ICMP header */
+    if ( (icmplen = n - hlen1) < 8)
+        return -4;				/* not enough to look at ICMP header */
+
+    if (icmp->icmp_type == ICMP_TIMXCEED &&
+        icmp->icmp_code == ICMP_TIMXCEED_INTRANS) {
+        if (icmplen < 8 + sizeof(struct ip))
+            return -4;			/* not enough data to look at inner IP */
+
+        hip = (struct ip *) (recvbuf + hlen1 + 8);
+        hlen2 = hip->ip_hl << 2;
+        if (icmplen < 8 + hlen2 + 4)
+            return -4;			/* not enough data to look at UDP ports */
+
+        udp = (struct udphdr *) (recvbuf + hlen1 + 8 + hlen2);
+        if (hip->ip_p == IPPROTO_UDP &&
+            udp->uh_sport == htons(sport) &&
+            udp->uh_dport == htons(dport + seq)) {
+            ret = -2;		/* we hit an intermediate router */
+            return -4;
+        }
+
+    } else if (icmp->icmp_type == ICMP_UNREACH) {
+        if (icmplen < 8 + sizeof(struct ip))
+            return -4;			/* not enough data to look at inner IP */
+
+        hip = (struct ip *) (recvbuf + hlen1 + 8);
+        hlen2 = hip->ip_hl << 2;
+        if (icmplen < 8 + hlen2 + 4)
+            return -4;			/* not enough data to look at UDP ports */
+
+        udp = (struct udphdr *) (recvbuf + hlen1 + 8 + hlen2);
+        if (hip->ip_p == IPPROTO_UDP &&
+            udp->uh_sport == htons(sport) &&
+            udp->uh_dport == htons(dport + seq)) {
+            if (icmp->icmp_code == ICMP_UNREACH_PORT)
+                ret = -1;	/* have reached destination */
+            else
+                ret = icmp->icmp_code;	/* 0, 1, 2, ... */
+            return -4;
+        }
+    }
+
+    return ret;
+}
+
+void * icmp1(void * arg){
+    int n;
+    socklen_t len;
+
+    int				hlen1, hlen2, icmplen, ret;
+	struct ip		*ip, *hip;
+	struct icmp		*icmp;
+	struct udphdr	*udp;
+
+    while(1){
+    	n = recvfrom(recvfd, recvbuf, sizeof(recvbuf), 0, pr->sarecv, &len);
+		if (n < 0) {
+			if (errno == EINTR)
+				continue;
+			else
+				perror("recvfrom error : ");
+		}
+
+		ip = (struct ip *) recvbuf;	/* start of IP header */
+		hlen1 = ip->ip_hl << 2;		/* length of IP header */
+	
+		icmp = (struct icmp *) (recvbuf + hlen1); /* start of ICMP header */
+		if ( (icmplen = n - hlen1) < 8)
+			continue;				/* not enough to look at ICMP header */
+
+        if (icmplen < 8 + sizeof(struct ip))
+            continue;			/* not enough data to look at inner IP */
+
+        hip = (struct ip *) (recvbuf + hlen1 + 8);
+		hlen2 = hip->ip_hl << 2;
+		if (icmplen < 8 + hlen2 + 4)
+			continue;			/* not enough data to look at UDP ports */
+
+        udp = (struct udphdr *) (recvbuf + hlen1 + 8 + hlen2);
+
+        int seq1 = ntohs(udp->uh_dport)-dport;
+
+        // Set ttl to appropriate thread
+        int ttl = (seq1 - 1)/NUM_PROBES + 1;
+
+        printf("--- TTL: %2d Seq: %2d \n", ttl, seq1);
+        num_bytes_read = n;
+
+        gettimeofday(&tvrecv, NULL);
+
+        pthread_cond_signal(&wait_on_icmp[ttl-1]);
+        pthread_cond_wait(&wait_on_icmp[ttl-1], &wait_mutex); 
+    }
+}
+
+void * ttlUtil(void * arg)
 {
-    struct sockaddr_in *raw_serv;
-    setsockopt(sendfd, pr->ttllevel, pr->ttloptname, &ttl, sizeof(int));
-    bzero(pr->salast, pr->salen);
-    printf("%2d ", ttl);
-    fflush(stdout);
-    for (probe = 0; probe < nprobes; probe++)
+    thread_data * thr = (thread_data *)arg;
+    int ttl = thr->ttl;
+
+    char * buf = (char *) malloc(sizeof(char) * 1500);
+    sprintf(buf, "%2d ", ttl);
+    strcpy(thr->str, buf);
+
+    char recv_copy[BUFSIZE];
+    char send_copy[BUFSIZE];
+
+    int seq1;
+
+    for (int probe = 0; probe < nprobes; probe++)
     {
-        rec = (struct rec *)sendbuf;
-        rec->seq = ++seq;
+        rec = (struct rec *)send_copy;
+        ++seq1;
+        rec->seq = (ttl - 1)* nprobes + seq1;
         rec->ttl = ttl;
         gettimeofday(&rec->tval, NULL);
 
-        raw_serv = (struct sockaddr_in *)pr->sasend;
-        raw_serv->sin_port = htons(dport + seq);
-        pr->sasend = (struct sockaddr *)raw_serv;
+        // printf("%d seq sent in ttl : \n", rec->seq);
+        struct sockaddr_in *raw_serv;
+        
+        // Mutex open
+        pthread_mutex_lock(&sendbuf_mutex);
 
-        sendto(sendfd, sendbuf, datalen, 0, pr->sasend, pr->salen);
+            printf("+++ TTL: %2d Seq: %2d\n", ttl, (ttl - 1)* nprobes + seq1);
+            setsockopt(sendfd, pr->ttllevel, pr->ttloptname, &ttl, sizeof(int));
+            bzero(pr->salast, pr->salen);
+            strcpy(sendbuf, send_copy);
+            raw_serv = (struct sockaddr_in *)pr->sasend;
+            raw_serv->sin_port = htons(dport + rec->seq);
+            pr->sasend = (struct sockaddr *)raw_serv;
+            sendto(sendfd, sendbuf, datalen, 0, pr->sasend, pr->salen);
 
-        if ((code = (*pr->recv)(seq, &tvrecv)) == -3)
+        pthread_mutex_unlock(&sendbuf_mutex);
+        // Mutex close
+
+        int num_bytes;
+        struct timeval tvrecv1;
+
+        pthread_cond_wait(&wait_on_icmp[ttl-1], &wait_mutex); 
+            strcpy(recv_copy, recvbuf);
+            num_bytes = num_bytes_read;
+            tvrecv1.tv_sec = tvrecv.tv_sec;
+            tvrecv1.tv_usec = tvrecv.tv_usec;
+        pthread_cond_signal(&wait_on_icmp[ttl-1]);
+
+        int code;
+
+        if ((code = process_icmp(recv_copy, num_bytes, rec->seq)) == -3) // Change receive to wake from thread
         {
-            printf(" *"); /* timeout, no reply */
+            sprintf(buf, " *"); /* timeout, no reply */
+            strcpy(thr->str, buf);
         }
         else
         {
             char str[NI_MAXHOST];
+            pthread_mutex_lock(&sendbuf_mutex);
             if (sock_cmp_addr(pr->sarecv, pr->salast, pr->salen) != 0)
             {
-                if (getnameinfo(pr->sarecv, pr->salen, str, sizeof(str), NULL, 0, 0) == 0)
-                    printf(" %s (%s)", str, sock_ntop_host(pr->sarecv, pr->salen));
-                else
-                    printf(" %s", sock_ntop_host(pr->sarecv, pr->salen));
-
+                if (getnameinfo(pr->sarecv, pr->salen, str, sizeof(str), NULL, 0, 0) == 0){
+                    sprintf(buf, " %s (%s)", str, sock_ntop_host(pr->sarecv, pr->salen));
+                    strcpy(thr->str, buf);
+                }
+                else{
+                    sprintf(buf, " %s", sock_ntop_host(pr->sarecv, pr->salen));
+                    strcpy(thr->str, buf);
+                }
                 memcpy(pr->salast, pr->sarecv, pr->salen);
             }
+            pthread_mutex_unlock(&sendbuf_mutex);
 
-            tv_sub(&tvrecv, &rec->tval);
-            rtt = tvrecv.tv_sec * 1000.0 + tvrecv.tv_usec / 1000.0;
-            printf(" %.3f ms", rtt);
+            tv_sub(&tvrecv1, &rec->tval);
+            rtt = tvrecv1.tv_sec * 1000.0 + tvrecv1.tv_usec / 1000.0;
+            sprintf(buf, " %.3f ms", rtt);
+            strcpy(thr->str, buf);
+
             if (code == -1) /* port unreachable; at destination */
-                done++;
-            else if (code >= 0)
-                printf(" (ICMP %s)", (*pr->icmpcode)(code));
+            {
+                if(ttl < done)
+                    done = ttl;
+            }
+            else if (code >= 0) {
+                sprintf(buf, " (ICMP %s)", (*pr->icmpcode)(code));
+                strcpy(thr->str, buf);
+            }
         }
-
-        fflush(stdout);
     }
-    printf("\n");
+    sprintf(buf, "\n");
+    strcpy(thr->str, buf);
 }
 
 void traceloop(void)
 {
-    int seq, code, done;
-
-    double rtt;
-    struct rec *rec;
-
-    struct timeval tvrecv;
-
     if ((recvfd = socket(pr->sasend->sa_family, SOCK_RAW, pr->icmpproto)) == -1)
     {
         perror("server: socket()");
@@ -155,15 +303,27 @@ void traceloop(void)
     pr->sabind = (struct sockaddr *)serv;
 
     sig_alrm(SIGALRM);
-    seq = 0;
-    done = 0;
+    done = INT8_MAX;
 
-    pthread_t pt[max_ttl];
+    pthread_t pt[max_ttl], ic_thread;
+    thread_data thr[max_ttl];
 
-    for (ttl = 1; ttl <= max_ttl && done == 0; ttl++)
+    pthread_create(&ic_thread, NULL, icmp1, NULL);
+
+    for (int ttl = 1; ttl <= max_ttl; ttl++)
     {
-        pthread_create(&pt[ttl-1], NULL, ttlUtil, ttl);
+        thr[ttl - 1].ttl = ttl;
+        thr[ttl - 1].str = (char *) malloc(sizeof(char) * 1500);
+        pthread_create(&pt[ttl-1], NULL, ttlUtil, (void *)&thr[ttl-1]);
     }
+
+    for (int ttl = 1; ttl <=max_ttl; ttl++){
+        pthread_join(pt[ttl-1], NULL);
+    }
+
+    for (int ttl = 1; ttl <=done; ttl++){
+        printf("%s\n", thr[ttl-1].str);
+    }    
 }
 
 const char *icmpcode_v4(int code)

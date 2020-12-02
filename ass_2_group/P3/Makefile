@@ -4,7 +4,7 @@ clean:
 	- rm trace
 
 trace:
-	gcc -g -o trace fastertraceroute.c recv_v4.c helper.c
+	gcc -pthread -g -o trace fastertraceroute.c helper.c
 
 new:
 	gcc -g new.c
