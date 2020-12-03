@@ -8,7 +8,7 @@ int done;
 
 pthread_mutex_t sendbuf_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t wait_on_icmp[MAX_TTL];
-pthread_mutex_t wait_mutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t wait_mutex[MAX_TTL] = {PTHREAD_MUTEX_INITIALIZER};
 
 struct proto proto_v4 = {icmpcode_v4, NULL, NULL,
                             NULL, NULL, 0, IPPROTO_ICMP, IPPROTO_IP, IP_TTL};
@@ -121,7 +121,12 @@ int process_icmp(char * recvbuf, int n, int seq){
             return -4;
         }
     }
+    int seq1 = ntohs(udp->uh_dport)-dport;
 
+    // Set ttl to appropriate thread
+    int ttl = (seq1 - 1)/NUM_PROBES + 1;
+
+    printf("*** TTL: %2d Seq: %2d \n", ttl, seq1);
     return ret;
 }
 
@@ -134,49 +139,89 @@ void * icmp1(void * arg){
 	struct icmp		*icmp;
 	struct udphdr	*udp;
 
+    int nprobe[MAX_TTL] = {0};
+
+    fd_set rset;
+    FD_ZERO(&rset);
+    
+
+    struct timeval sel_tval;
+
+    int nready = 0;
+
     while(1){
-    	n = recvfrom(recvfd, recvbuf, sizeof(recvbuf), 0, pr->sarecv, &len);
-		if (n < 0) {
-			if (errno == EINTR)
-				continue;
-			else
-				perror("recvfrom error : ");
-		}
+        sel_tval.tv_sec = 5;
+        FD_SET(recvfd, &rset);
+        int nready = select(recvfd+1 , &rset, NULL, NULL, &sel_tval);
 
-		ip = (struct ip *) recvbuf;	/* start of IP header */
-		hlen1 = ip->ip_hl << 2;		/* length of IP header */
-	
-		icmp = (struct icmp *) (recvbuf + hlen1); /* start of ICMP header */
-		if ( (icmplen = n - hlen1) < 8)
-			continue;				/* not enough to look at ICMP header */
+        if(FD_ISSET(recvfd, &rset)){
+            n = recvfrom(recvfd, recvbuf, sizeof(recvbuf), 0, pr->sarecv, &len);
+            if (n < 0) {
+                if (errno == EINTR)
+                    continue;
+                else
+                    perror("recvfrom error : ");
+            }
 
-        if (icmplen < 8 + sizeof(struct ip))
-            continue;			/* not enough data to look at inner IP */
+            ip = (struct ip *) recvbuf;	/* start of IP header */
+            hlen1 = ip->ip_hl << 2;		/* length of IP header */
+        
+            icmp = (struct icmp *) (recvbuf + hlen1); /* start of ICMP header */
+            if ( (icmplen = n - hlen1) < 8)
+                continue;				/* not enough to look at ICMP header */
 
-        hip = (struct ip *) (recvbuf + hlen1 + 8);
-		hlen2 = hip->ip_hl << 2;
-		if (icmplen < 8 + hlen2 + 4)
-			continue;			/* not enough data to look at UDP ports */
+            if (icmplen < 8 + sizeof(struct ip))
+                continue;			/* not enough data to look at inner IP */
 
-        udp = (struct udphdr *) (recvbuf + hlen1 + 8 + hlen2);
+            hip = (struct ip *) (recvbuf + hlen1 + 8);
+            hlen2 = hip->ip_hl << 2;
+            if (icmplen < 8 + hlen2 + 4)
+                continue;			/* not enough data to look at UDP ports */
 
-        int seq1 = ntohs(udp->uh_dport)-dport;
+            udp = (struct udphdr *) (recvbuf + hlen1 + 8 + hlen2);
 
-        // Set ttl to appropriate thread
-        int ttl = (seq1 - 1)/NUM_PROBES + 1;
+            int seq1 = ntohs(udp->uh_dport)-dport;
 
-        printf("--- TTL: %2d Seq: %2d \n", ttl, seq1);
-        num_bytes_read = n;
+            // Set ttl to appropriate thread
+            int ttl = (seq1 - 1)/NUM_PROBES + 1;
 
-        gettimeofday(&tvrecv, NULL);
+            printf("--- TTL: %2d Seq: %2d \n", ttl, seq1);
 
-        pthread_cond_signal(&wait_on_icmp[ttl-1]);
-        pthread_cond_wait(&wait_on_icmp[ttl-1], &wait_mutex); 
+            if(ttl > 30 || ttl < 1){
+                continue;
+            } 
+                
+            nprobe[ttl-1]++;
+
+            num_bytes_read = n;
+
+            gettimeofday(&tvrecv, NULL);
+
+            struct timespec t1;
+            t1.tv_sec = tvrecv.tv_sec + 2;
+            t1.tv_nsec = 0;
+
+            pthread_cond_signal(&wait_on_icmp[ttl-1]);
+            // pthread_mutex_lock(&wait_mutex[ttl-1]);
+            // int x = pthread_cond_timedwait(&wait_on_icmp[ttl-1], &wait_mutex[ttl-1], &t1);
+            if(nprobe[ttl-1] <= 3){
+                int x = pthread_cond_wait(&wait_on_icmp[ttl-1], &wait_mutex[ttl-1]);
+            }
+        } 
+        else { // select timed out. No replies since last 5 seconds.
+            recvbuf[0] = '\0';
+            for(int i = 0 ; i < max_ttl ; i++){
+                pthread_cond_signal(&wait_on_icmp[i]);
+            }
+        }
+
     }
 }
 
 void * ttlUtil(void * arg)
 {
+    struct sockaddr *sarecv_copy = (struct sockaddr *)calloc(1, pr->salen);;
+    struct sockaddr *salast_copy = (struct sockaddr *)calloc(1, pr->salen);;
     thread_data * thr = (thread_data *)arg;
     int ttl = thr->ttl;
 
@@ -218,40 +263,52 @@ void * ttlUtil(void * arg)
         int num_bytes;
         struct timeval tvrecv1;
 
-        pthread_cond_wait(&wait_on_icmp[ttl-1], &wait_mutex); 
-            strcpy(recv_copy, recvbuf);
+        pthread_cond_wait(&wait_on_icmp[ttl-1], &wait_mutex[ttl-1]);
+            memcpy(recv_copy, recvbuf, BUFSIZE);
             num_bytes = num_bytes_read;
             tvrecv1.tv_sec = tvrecv.tv_sec;
             tvrecv1.tv_usec = tvrecv.tv_usec;
+            memcpy(sarecv_copy, pr->sarecv, pr->salen);
+            // printf("Signalled %d\n", ttl);
         pthread_cond_signal(&wait_on_icmp[ttl-1]);
+        pthread_mutex_unlock(&wait_mutex[ttl-1]);
 
         int code;
 
-        if ((code = process_icmp(recv_copy, num_bytes, rec->seq)) == -3) // Change receive to wake from thread
+        if(recv_copy[0] == '\0'){
+            // Timed out.
+            sprintf(buf, " *"); /* timeout, no reply */
+            strcpy(thr->str, buf);
+            break;         
+        }
+
+        if ((code = process_icmp(recv_copy, num_bytes, (ttl - 1)* nprobes + seq1)) == -3) // Change receive to wake from thread
         {
+            printf(buf, " *"); /* timeout, no reply */
             sprintf(buf, " *"); /* timeout, no reply */
             strcpy(thr->str, buf);
         }
         else
         {
             char str[NI_MAXHOST];
-            pthread_mutex_lock(&sendbuf_mutex);
-            if (sock_cmp_addr(pr->sarecv, pr->salast, pr->salen) != 0)
+
+            if (sock_cmp_addr(sarecv_copy, salast_copy, pr->salen) != 0)
             {
-                if (getnameinfo(pr->sarecv, pr->salen, str, sizeof(str), NULL, 0, 0) == 0){
-                    sprintf(buf, " %s (%s)", str, sock_ntop_host(pr->sarecv, pr->salen));
+                if (getnameinfo(sarecv_copy, pr->salen, str, sizeof(str), NULL, 0, 0) == 0){
+                    printf(" %s (%s)", str, sock_ntop_host(sarecv_copy, pr->salen));
+                    sprintf(buf, " %s (%s)", str, sock_ntop_host(sarecv_copy, pr->salen));
                     strcpy(thr->str, buf);
                 }
                 else{
-                    sprintf(buf, " %s", sock_ntop_host(pr->sarecv, pr->salen));
+                    sprintf(buf, " %s", sock_ntop_host(sarecv_copy, pr->salen));
                     strcpy(thr->str, buf);
                 }
-                memcpy(pr->salast, pr->sarecv, pr->salen);
+                memcpy(salast_copy, sarecv_copy, pr->salen);
             }
-            pthread_mutex_unlock(&sendbuf_mutex);
 
             tv_sub(&tvrecv1, &rec->tval);
             rtt = tvrecv1.tv_sec * 1000.0 + tvrecv1.tv_usec / 1000.0;
+            printf(" %.3f ms", rtt);
             sprintf(buf, " %.3f ms", rtt);
             strcpy(thr->str, buf);
 
@@ -261,13 +318,18 @@ void * ttlUtil(void * arg)
                     done = ttl;
             }
             else if (code >= 0) {
+                printf(" (ICMP %s)", (*pr->icmpcode)(code));
                 sprintf(buf, " (ICMP %s)", (*pr->icmpcode)(code));
                 strcpy(thr->str, buf);
             }
         }
+        // printf("Signalled %d\n", ttl);
+        pthread_cond_signal(&wait_on_icmp[ttl-1]);
+        printf("\n");
     }
     sprintf(buf, "\n");
     strcpy(thr->str, buf);
+    printf("%s", thr->str);
 }
 
 void traceloop(void)
@@ -319,6 +381,7 @@ void traceloop(void)
 
     for (int ttl = 1; ttl <=max_ttl; ttl++){
         pthread_join(pt[ttl-1], NULL);
+        pthread_cond_signal(&wait_on_icmp[ttl-1]);
     }
 
     for (int ttl = 1; ttl <=done; ttl++){
