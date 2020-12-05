@@ -240,8 +240,8 @@ int main(int argc, char *argv[])
                 else
                 {
                     mergeUtil(buf->arr, ret, buf->start, buf->end, 0, retcnt-1, &retcnt);
-                    for(int i=0; i<listlen; i++)
-                        printf("%d ", ret[i]);
+                    // for(int i=0; i<listlen; i++)
+                    //     printf("%d ", ret[i]);
                 
                     sz = buf->len + buf1->len;
                     // printf("buf->src= %d buf1->src= %d buflen= %d buf1len= %d\n", buf->srcNode, buf1->srcNode, buf->len, buf1->len);

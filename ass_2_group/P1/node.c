@@ -269,10 +269,10 @@ int newNode(int port1, int port2, pid_t parent, int nodeNum)
 					// printf("Calling mergeutil nonRoot with\n");
 					mergeUtil(buf->arr, ret, buf->start, buf->end, 0, retcnt-1, &retcnt);
 
-                    for(int i=0; i<listlen; i++)
-                        printf("%d ", ret[i]);
+                    // for(int i=0; i<listlen; i++)
+                    //     printf("%d ", ret[i]);
 
-					printf("\n");
+					// printf("\n");
 
                     // printf("mergeutil ended nonRoot\n");
 					for(int i= 0; i<backSize; i++){
