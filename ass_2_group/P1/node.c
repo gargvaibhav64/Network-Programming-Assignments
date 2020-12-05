@@ -363,8 +363,8 @@ int newNode(int port1, int port2, pid_t parent, int nodeNum)
 					buf->start = start + buf->len / 2;
 					buf->end = buf->start + buf->len/2 - 1;
 					int len= buf->len;
-					buf->len= buf->len/2;
-					buf->destNode = buf->start;
+					buf->len= buf->len - buf->len/2;
+					buf->destNode = nodeNum + buf->x;
 					buf->merged = 0;
 					buf->srcNode= nodeNum;
 
@@ -374,7 +374,7 @@ int newNode(int port1, int port2, pid_t parent, int nodeNum)
 						exit(0);
 					}
 
-					buf->len = len - len / 2;
+					buf->len = len / 2;
 					buf->start = start;
 					buf->end = buf->start + len / 2 - 1;
 					buf->destNode = start;

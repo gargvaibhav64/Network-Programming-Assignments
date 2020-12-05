@@ -267,11 +267,12 @@ int main(int argc, char *argv[])
                 }
                 else
                 {
-                    buf->start = buf->len / 2;
+                    int len= buf->len;
+                    buf->start = buf->len - buf->len / 2;
                     buf->end = buf->len - 1;
                     buf->destNode = buf->x;
                     buf->merged = 0;
-                    buf->len= buf->len/2;
+                    buf->len= buf->len - buf->len/2;
 
                     buf->x /= 2;
 
@@ -283,6 +284,7 @@ int main(int argc, char *argv[])
 
                     sz = n - n / 2;
                     buf->start = 0;
+                    buf->len= len/2;
                     buf->end = buf->len - 1;
                     buf->destNode = 0;
                     buf->merged = 0;
