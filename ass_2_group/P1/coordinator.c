@@ -17,6 +17,9 @@ int main(int argc, char *argv[])
         exit(1);
     }
 
+    printf("Enter the no. of integers to be sorted: ");
+    scanf("%d", &listlen);
+
     srand(time(NULL));
     int p1= 30000 + rand()%20000;
     int p2= p1 + 1;
@@ -118,11 +121,9 @@ int main(int argc, char *argv[])
     struct buffer *buf = (struct buffer *)malloc(sizeof(struct buffer));
     bzero(buf, sizeof(struct buffer));
 
-    buf->len = n/2;
+    buf->len = listlen -  (listlen/2);
     buf->srcNode = 0;
 
-    printf("Enter the no. of integers to be sorted: ");
-    scanf("%d", &listlen);
     printf("\nN= %d listlen= %d listlen/N= %d", N, listlen, listlen/N);
     
     printf("Enter the %d integers: \n", listlen);
@@ -131,13 +132,15 @@ int main(int argc, char *argv[])
 
     int arr0 = buf->arr[0];
 
-    int sz = n;
+    int sz = listlen;
 
     buf->start = sz / 2;
     buf->end = sz - 1;
-    buf->destNode = buf->start;
+    buf->destNode = n/2 ;
     buf->merged = 0;
     buf->srcNode= 0;
+
+    buf->x = n/4;
 
     if (send(readconfd, buf, sizeof(struct buffer), 0) < 0)
     {
@@ -145,11 +148,12 @@ int main(int argc, char *argv[])
         exit(0);
     }
 
-    sz = n - n / 2;
+    sz = listlen - listlen / 2;
     buf->start = 0;
-    buf->end = n / 2 - 1;
+    buf->end = listlen / 2 - 1;
     buf->destNode = 0;
     buf->merged = 0;
+    buf->len = listlen/2;
 
     if (send(readconfd, buf, sizeof(struct buffer), 0) < 0)
     {
@@ -189,9 +193,6 @@ int main(int argc, char *argv[])
         {            
             // printf("Node-0 recieved data for Src= %d len= %d RPort = %d WPort = %d\n", 
 				// buf->srcNode,  buf->len, p1, p2);
-
-
-
             if (buf->merged)
             {
                 mergeSize+= buf->len;
@@ -268,9 +269,11 @@ int main(int argc, char *argv[])
                 {
                     buf->start = buf->len / 2;
                     buf->end = buf->len - 1;
-                    buf->destNode = buf->start;
+                    buf->destNode = buf->x;
                     buf->merged = 0;
                     buf->len= buf->len/2;
+
+                    buf->x /= 2;
 
                     if (send(readconfd, buf, sizeof(struct buffer), 0) < 0)
                     {

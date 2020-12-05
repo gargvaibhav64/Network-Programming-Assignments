@@ -17,6 +17,7 @@ struct buffer {
     int destNode;
     int srcNode;
     int len;
+    int x;
     int start;
     int end;
     int arr[MAX];
