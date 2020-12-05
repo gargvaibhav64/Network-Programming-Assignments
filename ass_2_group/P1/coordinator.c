@@ -76,11 +76,13 @@ int main(int argc, char *argv[])
 
     // Child process initialization
 
+    pid_t pid[n];
+
     for (int i = 1; i < n; i++)
     {
         pid_t parent = getpid();
-        pid_t pid = fork();
-        if (pid > 0)
+        pid[i] = fork();
+        if (pid[i] > 0)
         {
             while(gotalarm == 0){
 
@@ -101,7 +103,7 @@ int main(int argc, char *argv[])
     // printf("Child completed\n");
     // Child process ends
 
-    int len;
+    int len = sizeof(waddr[0]);
     
 
     if ((readconfd = accept(wrtfd, (SA *)&waddr[0], &len)) < 0)
@@ -148,7 +150,7 @@ int main(int argc, char *argv[])
         exit(0);
     }
 
-    sz = listlen - listlen / 2;
+    // sz = listlen - listlen / 2;
     buf->start = 0;
     buf->end = listlen / 2 - 1;
     buf->destNode = 0;
@@ -163,7 +165,7 @@ int main(int argc, char *argv[])
 
     // printf("Sent!\n");
 
-    int cnt = 0;
+    int cnt = 0, cnt1 = 0;
     int mergeSize=0;
     //  bzero(buf, 100);
     struct buffer *buf1 = (struct buffer *)malloc(sizeof(struct buffer));
@@ -191,16 +193,18 @@ int main(int argc, char *argv[])
         }
         else
         {            
-            // printf("Node-0 recieved data for Src= %d len= %d RPort = %d WPort = %d\n", 
-				// buf->srcNode,  buf->len, p1, p2);
+            printf("Node-0 received data for Src= %d len= %d RPort = %d WPort = %d\n", 
+				buf->srcNode,  buf->len, p1, p2);
             if (buf->merged)
             {
-                mergeSize+= buf->len;
-                printf("Root (backsize= %d) recieved merged for dest= 0 Src= %d start= %d end= %d len= %d\n", n, buf->srcNode, buf->start, buf->end, buf->len);
-                // for(int i=0; i<n; i++){
-                //     printf("%d", buf->arr[i]);
-                // }
+                mergeSize += buf->len;
+                // printf("Root (backsize= %d) received merged for dest= 0 Src= %d start= %d end= %d len= %d\n", n, buf->srcNode, buf->start, buf->end, buf->len);
+
                 cnt++;
+                // if(buf->len == listlen/2 || buf->len == listlen/2 + 1){
+                //     cnt1++;
+                // }
+
                 if (cnt < 2)
                 {
                     memcpy(buf1, buf, sizeof(struct buffer));
@@ -216,23 +220,29 @@ int main(int argc, char *argv[])
 
                 // cnt = 0;
 
-                if (mergeSize == n)
+                if (mergeSize == listlen)
                 {
 					mergeUtil(buf->arr, ret, buf->start, buf->end, 0, retcnt-1, &retcnt);
-					for(int i= 0; i<n+1; i++){
+					for(int i= 0; i<listlen+1; i++){
 						buf->arr[i]= ret[i];
 					}
                     printf("Sorted array :\n");
-                    for(int i=0; i<n; i++)
+                    for(int i=0; i<listlen; i++)
                         printf("%d ", ret[i]);
 
-                    
+                    printf("\n");
+
+                    for(int kill1 = 1 ; kill1 < N ; kill1++){
+                        kill(pid[kill1], SIGKILL);
+                    }
                     return 0; // Final list obtained
                 }
                 else
                 {
                     mergeUtil(buf->arr, ret, buf->start, buf->end, 0, retcnt-1, &retcnt);
-
+                    for(int i=0; i<listlen; i++)
+                        printf("%d ", ret[i]);
+                
                     sz = buf->len + buf1->len;
                     // printf("buf->src= %d buf1->src= %d buflen= %d buf1len= %d\n", buf->srcNode, buf1->srcNode, buf->len, buf1->len);
                     buf->start = 0;
@@ -241,15 +251,22 @@ int main(int argc, char *argv[])
                     buf->merged = 1;
                     buf->srcNode= 0;
                     buf->len= sz;
-                
+
+                    // if (send(readconfd, buf, sizeof(struct buffer), 0) < 0)
+                    // {
+                    //     perror("Send error");
+                    //     exit(0);
+                    // }
                 }
+
+                // mergeSize = 0;
             }
             else
             {
-                printf("Root (backsize= %d) recieved unmerged for dest= 0 Src= %d start= %d end= %d len= %d\n", n, buf->srcNode, buf->start, buf->end, buf->len);
+                // printf("Root (backsize= %d) received unmerged for dest= 0 Src= %d start= %d end= %d len= %d\n", n, buf->srcNode, buf->start, buf->end, buf->len);
 
                 buf->srcNode= 0;
-                if (buf->len == listlen/N)
+                if (buf->len == max(1, listlen/N))
                 {
                     sz = buf->len;
                     buf->start = 0;
