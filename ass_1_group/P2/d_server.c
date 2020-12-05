@@ -1,4 +1,4 @@
-#define MSGQ_PATH "/mnt/e/Academics/3-1/IS F462/ass_1_group/P2"
+#define MSGQ_PATH "/media/vaibhav/New Volume/Academics/3-1/IS F462/Network Programming/ass_1_group/P2"
 
 #include <stdio.h>
 #include <sys/msg.h>

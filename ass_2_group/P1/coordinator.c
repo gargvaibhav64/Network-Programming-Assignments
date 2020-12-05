@@ -12,6 +12,11 @@ void sig_alrm(int signo)
 
 int main(int argc, char *argv[])
 {
+    if(argc < 2){
+        printf("Usage: $ ./server 4 \n");
+        exit(1);
+    }
+
     srand(time(NULL));
     int p1= 30000 + rand()%20000;
     int p2= p1 + 1;

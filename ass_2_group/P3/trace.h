@@ -52,7 +52,7 @@ char * sock_ntop_host(const struct sockaddr *sa, socklen_t salen);
 int sock_cmp_addr(const struct sockaddr *sa1, const struct sockaddr *sa2, socklen_t salen);
 
 double rtt;
-struct rec *rec;
+// struct rec *rec;
 
 struct timeval tvrecv;
 

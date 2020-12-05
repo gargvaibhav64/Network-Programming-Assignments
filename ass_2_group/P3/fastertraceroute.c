@@ -23,6 +23,11 @@ void sig_alrm(int signo)
 
 int main(int argc, char *argv[])
 {
+    if(argc < 2){
+        printf("Usage: $ ./trace www.google.com \n");
+        exit(1);
+    }
+
     int datalen = sizeof(struct rec);
     int max_ttl = 30;
     int nprobes = 3;
@@ -46,7 +51,7 @@ int main(int argc, char *argv[])
     hints.ai_family = 0;
     hints.ai_socktype = 0;
 
-    host = "www.google.com";
+    host = argv[1];
 
     if ((ret = getaddrinfo(host, NULL, &hints, &res)) != 0)
     {
@@ -98,7 +103,7 @@ int process_icmp(char * recvbuf, int n, int seq){
             udp->uh_sport == htons(sport) &&
             udp->uh_dport == htons(dport + seq)) {
             ret = -2;		/* we hit an intermediate router */
-            return -4;
+            return ret;
         }
 
     } else if (icmp->icmp_type == ICMP_UNREACH) {
@@ -118,7 +123,7 @@ int process_icmp(char * recvbuf, int n, int seq){
                 ret = -1;	/* have reached destination */
             else
                 ret = icmp->icmp_code;	/* 0, 1, 2, ... */
-            return -4;
+            return ret;
         }
     }
     int seq1 = ntohs(udp->uh_dport)-dport;
@@ -126,7 +131,7 @@ int process_icmp(char * recvbuf, int n, int seq){
     // Set ttl to appropriate thread
     int ttl = (seq1 - 1)/NUM_PROBES + 1;
 
-    printf("*** TTL: %2d Seq: %2d \n", ttl, seq1);
+    // printf("*** TTL: %2d Seq: %2d \n", ttl, seq1);
     return ret;
 }
 
@@ -150,11 +155,12 @@ void * icmp1(void * arg){
     int nready = 0;
 
     while(1){
-        sel_tval.tv_sec = 5;
+        sel_tval.tv_sec = 3;
         FD_SET(recvfd, &rset);
         int nready = select(recvfd+1 , &rset, NULL, NULL, &sel_tval);
 
         if(FD_ISSET(recvfd, &rset)){
+            memset(recvbuf, 0, BUFSIZE);
             n = recvfrom(recvfd, recvbuf, sizeof(recvbuf), 0, pr->sarecv, &len);
             if (n < 0) {
                 if (errno == EINTR)
@@ -185,7 +191,7 @@ void * icmp1(void * arg){
             // Set ttl to appropriate thread
             int ttl = (seq1 - 1)/NUM_PROBES + 1;
 
-            printf("--- TTL: %2d Seq: %2d \n", ttl, seq1);
+            // printf("--- TTL: %2d Seq: %2d \n", ttl, seq1);
 
             if(ttl > 30 || ttl < 1){
                 continue;
@@ -220,6 +226,7 @@ void * icmp1(void * arg){
 
 void * ttlUtil(void * arg)
 {
+    struct rec *rec;
     struct sockaddr *sarecv_copy = (struct sockaddr *)calloc(1, pr->salen);;
     struct sockaddr *salast_copy = (struct sockaddr *)calloc(1, pr->salen);;
     thread_data * thr = (thread_data *)arg;
@@ -248,10 +255,10 @@ void * ttlUtil(void * arg)
         // Mutex open
         pthread_mutex_lock(&sendbuf_mutex);
 
-            printf("+++ TTL: %2d Seq: %2d\n", ttl, (ttl - 1)* nprobes + seq1);
+            // printf("+++ TTL: %2d Seq: %2d\n", ttl, (ttl - 1)* nprobes + seq1);
             setsockopt(sendfd, pr->ttllevel, pr->ttloptname, &ttl, sizeof(int));
             bzero(pr->salast, pr->salen);
-            strcpy(sendbuf, send_copy);
+            memcpy(sendbuf, send_copy, sizeof(struct rec));
             raw_serv = (struct sockaddr_in *)pr->sasend;
             raw_serv->sin_port = htons(dport + rec->seq);
             pr->sasend = (struct sockaddr *)raw_serv;
@@ -270,47 +277,54 @@ void * ttlUtil(void * arg)
             tvrecv1.tv_usec = tvrecv.tv_usec;
             memcpy(sarecv_copy, pr->sarecv, pr->salen);
             // printf("Signalled %d\n", ttl);
-        pthread_cond_signal(&wait_on_icmp[ttl-1]);
         pthread_mutex_unlock(&wait_mutex[ttl-1]);
-
+        pthread_cond_signal(&wait_on_icmp[ttl-1]);
+        
         int code;
 
         if(recv_copy[0] == '\0'){
             // Timed out.
             sprintf(buf, " *"); /* timeout, no reply */
-            strcpy(thr->str, buf);
+            strcat(thr->str, buf);
             break;         
         }
 
         if ((code = process_icmp(recv_copy, num_bytes, (ttl - 1)* nprobes + seq1)) == -3) // Change receive to wake from thread
         {
-            printf(buf, " *"); /* timeout, no reply */
+            // printf(buf, " *"); /* timeout, no reply */
             sprintf(buf, " *"); /* timeout, no reply */
-            strcpy(thr->str, buf);
+            strcat(thr->str, buf);
         }
         else
         {
             char str[NI_MAXHOST];
 
-            if (sock_cmp_addr(sarecv_copy, salast_copy, pr->salen) != 0)
-            {
+            // if (sock_cmp_addr(sarecv_copy, salast_copy, pr->salen) != 0)
+            // {
+            if(ttl == 1 && seq1 == 1){
+                // printf("hello");
+            }
+                
                 if (getnameinfo(sarecv_copy, pr->salen, str, sizeof(str), NULL, 0, 0) == 0){
-                    printf(" %s (%s)", str, sock_ntop_host(sarecv_copy, pr->salen));
+                    // printf("qqq TTL: %2d Seq: %2d code : %d ", ttl, (ttl - 1)* nprobes + seq1, code );
+                    // printf(" %s (%s)", str, sock_ntop_host(sarecv_copy, pr->salen));
                     sprintf(buf, " %s (%s)", str, sock_ntop_host(sarecv_copy, pr->salen));
-                    strcpy(thr->str, buf);
+                    strcat(thr->str, buf);
                 }
                 else{
+                    // printf("qqq TTL: %2d Seq: %2d code : %d ", ttl, (ttl - 1)* nprobes + seq1, code);
+                    // printf(" %s", sock_ntop_host(sarecv_copy, pr->salen));
                     sprintf(buf, " %s", sock_ntop_host(sarecv_copy, pr->salen));
-                    strcpy(thr->str, buf);
+                    strcat(thr->str, buf);
                 }
                 memcpy(salast_copy, sarecv_copy, pr->salen);
-            }
+            // }
 
             tv_sub(&tvrecv1, &rec->tval);
             rtt = tvrecv1.tv_sec * 1000.0 + tvrecv1.tv_usec / 1000.0;
-            printf(" %.3f ms", rtt);
+            // printf(" %.3f ms", rtt);
             sprintf(buf, " %.3f ms", rtt);
-            strcpy(thr->str, buf);
+            strcat(thr->str, buf);
 
             if (code == -1) /* port unreachable; at destination */
             {
@@ -318,18 +332,20 @@ void * ttlUtil(void * arg)
                     done = ttl;
             }
             else if (code >= 0) {
-                printf(" (ICMP %s)", (*pr->icmpcode)(code));
+                // printf(" (ICMP %s)", (*pr->icmpcode)(code));
                 sprintf(buf, " (ICMP %s)", (*pr->icmpcode)(code));
-                strcpy(thr->str, buf);
+                strcat(thr->str, buf);
             }
         }
         // printf("Signalled %d\n", ttl);
         pthread_cond_signal(&wait_on_icmp[ttl-1]);
-        printf("\n");
+        sprintf(buf, "\n");
+        strcat(thr->str, buf);
+        // printf("\n");
     }
-    sprintf(buf, "\n");
-    strcpy(thr->str, buf);
-    printf("%s", thr->str);
+    
+    
+    // printf("%s", thr->str);
 }
 
 void traceloop(void)
@@ -384,7 +400,7 @@ void traceloop(void)
         pthread_cond_signal(&wait_on_icmp[ttl-1]);
     }
 
-    for (int ttl = 1; ttl <=done; ttl++){
+    for (int ttl = 1; ttl <= (max_ttl < done ? max_ttl : done ); ttl++){
         printf("%s\n", thr[ttl-1].str);
     }    
 }
