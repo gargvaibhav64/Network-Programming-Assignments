@@ -121,9 +121,12 @@ int main(int argc, char *argv[])
     buf->len = n/2;
     buf->srcNode = 0;
 
-    printf("Enter %d integers: \n", n);
-
-    for (int i = 0; i < n; i++)
+    printf("Enter the no. of integers to be sorted: ");
+    scanf("%d", &listlen);
+    printf("\nN= %d listlen= %d listlen/N= %d", N, listlen, listlen/N);
+    
+    printf("Enter the %d integers: \n", listlen);
+    for (int i = 0; i < listlen; i++)
         scanf("%d", &buf->arr[i]);
 
     int arr0 = buf->arr[0];
@@ -184,13 +187,15 @@ int main(int argc, char *argv[])
         }
         else
         {            
-            printf("Node-0 recieved data for Src= %d len= %d RPort = %d WPort = %d\n", 
-				buf->srcNode,  buf->len, p1, p2);
+            // printf("Node-0 recieved data for Src= %d len= %d RPort = %d WPort = %d\n", 
+				// buf->srcNode,  buf->len, p1, p2);
+
+
 
             if (buf->merged)
             {
                 mergeSize+= buf->len;
-                // printf("Root recieved merged for dest= 0 Src= %d start= %d end= %d len= %d\n", buf->srcNode, buf->start, buf->end, buf->len);
+                printf("Root (backsize= %d) recieved merged for dest= 0 Src= %d start= %d end= %d len= %d\n", n, buf->srcNode, buf->start, buf->end, buf->len);
                 // for(int i=0; i<n; i++){
                 //     printf("%d", buf->arr[i]);
                 // }
@@ -225,7 +230,6 @@ int main(int argc, char *argv[])
                 }
                 else
                 {
-
                     mergeUtil(buf->arr, ret, buf->start, buf->end, 0, retcnt-1, &retcnt);
 
                     sz = buf->len + buf1->len;
@@ -241,16 +245,18 @@ int main(int argc, char *argv[])
             }
             else
             {
-                // printf("Root recieved unmerged for dest= 0 Src= %d start= %d end= %d len= %d\n", buf->srcNode, buf->start, buf->end, buf->len);
+                printf("Root (backsize= %d) recieved unmerged for dest= 0 Src= %d start= %d end= %d len= %d\n", n, buf->srcNode, buf->start, buf->end, buf->len);
 
                 buf->srcNode= 0;
-                if (buf->len == 1)
+                if (buf->len == listlen/N)
                 {
-                    sz = 1;
+                    sz = buf->len;
                     buf->start = 0;
-                    buf->end = 0;
+                    buf->end = buf->end;
                     buf->destNode = 0;
                     buf->merged = 1;
+
+                    partSort(buf->arr, listlen, buf->start, buf->end);
 
                     if (send(readconfd, buf, sizeof(struct buffer), 0) < 0)
                     {
